@@ -134,7 +134,7 @@ sparseVAR <- function(Y, p=NULL, VARpen="HLag", VARlseq=NULL, VARgran=NULL,
     
     for(index in 1:VARdata$k){
       # Var estimation with selected regularization parameter
-      VARmodel[[length(VARmodel) + 1]] <- HVAR(fullY=VARdata$fullY[,index], fullZ=VARdata$fullZ, p=VARdata$p, k=VARdata$k, lambdaPhi=VARcv$lambda_opt_oneSE[index], eps=eps, type=VARpen)
+      VARmodel[[length(VARmodel) + 1]] <- HVAR(fullY=VARdata$fullY[,index], fullZ=VARdata$fullZ, p=VARdata$p, k = 1, lambdaPhi=VARcv$lambda_opt_oneSE[index], eps=eps, type=VARpen)
     }
     
   }else{ # No time series cross-validation
@@ -176,6 +176,7 @@ sparseVAR <- function(Y, p=NULL, VARpen="HLag", VARlseq=NULL, VARgran=NULL,
   if(selection == "cv"){
     if(ncol(Y) == 1){
       Phihat <- matrix(VARmodel[[1]]$Phi, nrow = 1)
+      phi0hat <- matrix(VARmodel[[1]]$phi, nrow = 1)
     }else{
       Phihat <- NULL
       phi0hat <- numeric(VARdata$k)
@@ -191,7 +192,7 @@ sparseVAR <- function(Y, p=NULL, VARpen="HLag", VARlseq=NULL, VARgran=NULL,
     out <- list("k"=k, "Y"=Y, "p"=p, "Phihat"=Phihat, "phi0hat"=phi0hat,
                 "series_names"=series_names, "lambdas"=VARcv$lambda,
                 "MSFEcv"=VARcv$MSFE_avg, "MSFE_all"=VARcv$MSFE_all,
-                "lambda_SEopt"=VARcv$lambda_opt_oneSE,"lambda_opt"=VARcv$lambda_opt, "h"=h,
+                "lambda_SEopt"=lambda_opt_oneSE,"lambda_opt"=lambda_opt, "h"=h,
                 "selection" = selection)
   }else{
     out <- list("k"=k, "Y"=Y, "p"=p, "Phihat"=Phis, "phi0hat"=phi0s,
