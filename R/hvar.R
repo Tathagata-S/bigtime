@@ -179,6 +179,8 @@ sparseVAR <- function(Y, p=NULL, VARpen="HLag", VARlseq=NULL, VARgran=NULL,
     }else{
       Phihat <- NULL
       phi0hat <- numeric(VARdata$k)
+      lambda_opt <- as.numeric(VARcv$lambda_opt)
+      lambda_opt_oneSE <- as.numeric(VARcv$lambda_opt_oneSE)
       for(index in 1:length(VARmodel)){
         Phihat <- rbind(Phihat, VARmodel[[index]]$Phi)
         phi0hat[index] <- VARmodel[[index]]$phi 
