@@ -333,10 +333,10 @@ HVAR_cv<-function(Y, p, h=1, lambdaPhiseq=NULL, gran1 = 10^2, gran2=10, T1.cutof
 
   # Output
   out <- list("lambda" = lambdaPhiseq,
-              "lambda_opt_oneSE" = lambda_opt_oneSE,
+              "lambda_opt_oneSE" = opt_lambda_oneSE,
               "MSFE_all" = MSFEmatrix,
               "MSFE_avg" = MSFE_avg,
               "flag_oneSE" = gridflag_oneSE,
-              "lambda_opt" = lambda_opt)
+              "lambda_opt" = opt_lambda_opt)
 
 }
