@@ -142,34 +142,35 @@ sparseVAR <- function(Y, p=NULL, VARpen="HLag", VARlseq=NULL, VARgran=NULL,
     Phis <- array(NA, c(k, k*p, VARgran2)) # Estimates AR coefficients for each value in the grid
     phi0s <- array(NA, c(k, 1, VARgran2)) # Estimates of constants for each value in the grid
 
-    fullY <- VARdata$fullY # response matrix
-
-    if(k==1){
-      fullY <- matrix(fullY, ncol=1)
-    }
-    fullZ <- VARdata$fullZ # design matrix
-
-
-    # Get lambda grid if not specified by the user
-    if(is.null(VARlseq)){
+    fullY0 <- VARdata$fullY # response matrix
+    
+    for(index in 1:k){
+      fullY = matrix(fullY0[, index], ncol = 1)
+      fullZ <- VARdata$fullZ # design matrix
+      
+      
+      # Get lambda grid
       jj <- .lfunction3(p, k)
-
+      
       if(VARpen=="HLag"){
         VARlseq <- .LambdaGridE(VARgran1, VARgran2, jj, fullY, fullZ, "HVARELEM", p, k,
                                 MN=F, alpha=1/(k+1), C=rep(1,p))
       }
-
+      
       if(VARpen=="L1"){
         VARlseq <- .LambdaGridE(VARgran1, VARgran2, jj, fullY, fullZ,"Basic",p,k,MN=F,alpha=1/(k+1),C=rep(1,p))
       }
-
+      
+      for(il in 1:length(VARlseq)){ # For now in R
+        VARmodel <- HVAR(fullY=matrix(VARdata$fullY[, index], ncol = 1), fullZ=VARdata$fullZ, p=VARdata$p, k=1, lambdaPhi=VARlseq[il], eps=eps, type=VARpen)
+        Phis[index,,il] <- VARmodel$Phi
+        phi0s[index,,il] <- VARmodel$phi
+      }
+      
     }
-
-    for(il in 1:length(VARlseq)){ # For now in R
-      VARmodel <- HVAR(fullY=VARdata$fullY, fullZ=VARdata$fullZ, p=VARdata$p, k=VARdata$k, lambdaPhi=VARlseq[il], eps=eps, type=VARpen)
-      Phis[,,il] <- VARmodel$Phi
-      phi0s[,,il] <- VARmodel$phi
-    }
+    
+    
+    
 
   }
 
