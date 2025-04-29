@@ -126,28 +126,29 @@ sparseVAR <- function(Y, p=NULL, VARpen="HLag", VARlseq=NULL, VARgran=NULL,
   # Set the grid of sparsity parameters
   VARdata <- HVARmodel(Y=Y, p=p, h=h)
   k <- VARdata$k # Number of time series
+  VARmodel <- NULL
 
   if(selection == "cv"){ # Time series cross-validation to get optimal sparsity parameter
     VARcv <- HVAR_cv(Y=Y, p=p, h=h, lambdaPhiseq=VARlseq, gran1=VARgran1, gran2=VARgran2, T1.cutoff=cvcut, eps=eps, type=VARpen)
-
-    # Var estimation with selected regularization parameter
-    VARmodel <- HVAR(fullY=VARdata$fullY, fullZ=VARdata$fullZ, p=VARdata$p, k=VARdata$k, lambdaPhi=VARcv$lambda_opt_oneSE, eps=eps, type=VARpen)
+    print("HVAR_cv done")
+    for(index in 1:VARdata$k){
+      # Var estimation with selected regularization parameter
+      VARmodel[[length(VARmodel) + 1]] <- HVAR(fullY=VARdata$fullY[,index], fullZ=VARdata$fullZ, p=VARdata$p, k = 1, lambdaPhi=VARcv$lambda_opt_oneSE[index], eps=eps, type=VARpen)
+    }
 
   }else{ # No time series cross-validation
 
     Phis <- array(NA, c(k, k*p, VARgran2)) # Estimates AR coefficients for each value in the grid
     phi0s <- array(NA, c(k, 1, VARgran2)) # Estimates of constants for each value in the grid
 
-    fullY <- VARdata$fullY # response matrix
+    fullY0 <- VARdata$fullY # response matrix
 
-    if(k==1){
-      fullY <- matrix(fullY, ncol=1)
-    }
-    fullZ <- VARdata$fullZ # design matrix
+    for(index in 1:k){
+      fullY = matrix(fullY0[, index], ncol = 1)
+      fullZ <- VARdata$fullZ # design matrix
 
 
-    # Get lambda grid if not specified by the user
-    if(is.null(VARlseq)){
+      # Get lambda grid
       jj <- .lfunction3(p, k)
 
       if(VARpen=="HLag"){
@@ -159,22 +160,39 @@ sparseVAR <- function(Y, p=NULL, VARpen="HLag", VARlseq=NULL, VARgran=NULL,
         VARlseq <- .LambdaGridE(VARgran1, VARgran2, jj, fullY, fullZ,"Basic",p,k,MN=F,alpha=1/(k+1),C=rep(1,p))
       }
 
+      for(il in 1:length(VARlseq)){ # For now in R
+        VARmodel <- HVAR(fullY=matrix(VARdata$fullY[, index], ncol = 1), fullZ=VARdata$fullZ, p=VARdata$p, k=1, lambdaPhi=VARlseq[il], eps=eps, type=VARpen)
+        Phis[index,,il] <- VARmodel$Phi
+        phi0s[index,,il] <- VARmodel$phi
+      }
+
     }
 
-    for(il in 1:length(VARlseq)){ # For now in R
-      VARmodel <- HVAR(fullY=VARdata$fullY, fullZ=VARdata$fullZ, p=VARdata$p, k=VARdata$k, lambdaPhi=VARlseq[il], eps=eps, type=VARpen)
-      Phis[,,il] <- VARmodel$Phi
-      phi0s[,,il] <- VARmodel$phi
-    }
+
+
 
   }
 
   if(selection == "cv"){
-    Phihat <- if (ncol(Y) == 1) matrix(VARmodel$Phi, nrow = 1) else VARmodel$Phi
-    out <- list("k"=k, "Y"=Y, "p"=p, "Phihat"=Phihat, "phi0hat"=VARmodel$phi,
+    if(ncol(Y) == 1){
+      Phihat <- matrix(VARmodel[[1]]$Phi, nrow = 1)
+      phi0hat <- matrix(VARmodel[[1]]$phi, nrow = 1)
+    }else{
+      Phihat <- NULL
+      phi0hat <- numeric(VARdata$k)
+      lambda_opt <- as.numeric(VARcv$lambda_opt)
+      lambda_opt_oneSE <- as.numeric(VARcv$lambda_opt_oneSE)
+      for(index in 1:length(VARmodel)){
+        Phihat <- rbind(Phihat, VARmodel[[index]]$Phi)
+        phi0hat[index] <- VARmodel[[index]]$phi
+      }
+    }
+
+
+    out <- list("k"=k, "Y"=Y, "p"=p, "Phihat"=Phihat, "phi0hat"=phi0hat,
                 "series_names"=series_names, "lambdas"=VARcv$lambda,
                 "MSFEcv"=VARcv$MSFE_avg, "MSFE_all"=VARcv$MSFE_all,
-                "lambda_SEopt"=VARcv$lambda_opt_oneSE,"lambda_opt"=VARcv$lambda_opt, "h"=h,
+                "lambda_SEopt"=lambda_opt_oneSE,"lambda_opt"=lambda_opt, "h"=h,
                 "selection" = selection)
   }else{
     out <- list("k"=k, "Y"=Y, "p"=p, "Phihat"=Phis, "phi0hat"=phi0s,
@@ -203,7 +221,7 @@ HVARmodel<-function(Y, p, h=1){
   DATAY <- embed(Y, dimension=p+h) # collect data to compute h-step ahead forecasts when selecting lambda
   fullY <- DATAY[, 1:k] # in its columns Y1, Y2, ... Yq
   fullZ <- t(DATAY[, (ncol(DATAY)-k*p+1):ncol(DATAY)])
-
+  browser()
   out<-list("fullY"=fullY, "fullZ"=fullZ, "k"=k, "p"=p)
 }
 
@@ -236,86 +254,94 @@ HVAR_cv<-function(Y, p, h=1, lambdaPhiseq=NULL, gran1 = 10^2, gran2=10, T1.cutof
   # Get response and predictor matrix
   HVARmodelFIT <- HVARmodel(Y=Y, p=p, h=h)
   k <- HVARmodelFIT$k # Number of time series
-  fullY <- HVARmodelFIT$fullY # response matrix
-  if(k==1){
-    fullY <- matrix(fullY, ncol=1)
-  }
-  fullZ <- HVARmodelFIT$fullZ # design matrix
+  opt_lambdas <- numeric(k)
+  opt_lambdas_oneSE <- numeric(k)
+  fullY0 <- HVARmodelFIT$fullY # response matrix
+  print("generated predictor and response matrix")
+  for(i in 1:k){
+
+    fullY = matrix(fullY0[, i], ncol = 1)
 
 
-  # Get lambda grid if not specified by the user
-  if(is.null(lambdaPhiseq)){
-    jj <- .lfunction3(p, k)
+    fullZ <- HVARmodelFIT$fullZ # design matrix
+
+
+    jj <- .lfunction3(p, 1)
+
+    print(".lfun3 done")
 
     if(type=="HLag"){
       lambdaPhiseq <- .LambdaGridE(gran1, gran2, jj, fullY, fullZ,"HVARELEM", p, k,
-                                       MN=F, alpha=1/(k+1), C=rep(1,p))
+                                   MN=F, alpha=1/(k+1), C=rep(1,p))
     }
 
     if(type=="L1"){
-      lambdaPhiseq <- .LambdaGridE(gran1, gran2, jj, fullY, fullZ,"Basic",p,k,MN=F,alpha=1/(k+1),C=rep(1,p))
+      lambdaPhiseq <- .LambdaGridE(gran1, gran2, jj, fullY, fullZ,"Basic",p,1,MN=F,alpha=1/(k+1),C=rep(1,p))
     }
 
-  }
+    print("Lambda seq done")
+    # Time Series cross-validation loop
+    # Choose sparsity parameter that minimizes h-step ahead mean squared prediction error.
+    n <- nrow(fullY)
+    T1 <- floor(T1.cutoff*n)
+    tseq <- T1:(n-1)
 
-  # Time Series cross-validation loop
-  # Choose sparsity parameter that minimizes h-step ahead mean squared prediction error.
-  n <- nrow(fullY)
-  T1 <- floor(T1.cutoff*n)
-  tseq <- T1:(n-1)
+    estim <- (type=="HLag")*2 + (type=="L1")*1
+    # Time-series cross-validation for tuning parameter selection
+    print("ready")
+    my_cv <- HVAR_cvaux_loop_cpp(Y = fullY, Z = fullZ, tseq = tseq, gamm = lambdaPhiseq,  eps = eps, p = p, estim = estim)
+    print("done")
+    MSFEmatrix <- my_cv$MSFEcv
+    rownames(MSFEmatrix) <- paste0("t=", tseq)
+    colnames(MSFEmatrix) <- paste0("lambda=", lambdaPhiseq)
+    sparsitymatrix <- my_cv$sparsitycv
+    colnames(sparsitymatrix) <- colnames(MSFEmatrix)
+    rownames(sparsitymatrix) <- rownames(MSFEmatrix)
+    MSFE_avg <- apply(MSFEmatrix, 2, mean)
+    lambda_opt <- lambdaPhiseq[which.min(MSFE_avg)]
 
-  estim <- (type=="HLag")*2 + (type=="L1")*1
-  # Time-series cross-validation for tuning parameter selection
-  my_cv <- HVAR_cvaux_loop_cpp(Y = fullY, Z = fullZ, tseq = tseq, gamm = lambdaPhiseq,  eps = eps, p = p, estim = estim)
-  MSFEmatrix <- my_cv$MSFEcv
-  rownames(MSFEmatrix) <- paste0("t=", tseq)
-  colnames(MSFEmatrix) <- paste0("lambda=", lambdaPhiseq)
-  sparsitymatrix <- my_cv$sparsitycv
-  colnames(sparsitymatrix) <- colnames(MSFEmatrix)
-  rownames(sparsitymatrix) <- rownames(MSFEmatrix)
-  MSFE_avg <- apply(MSFEmatrix, 2, mean)
-  lambda_opt <- lambdaPhiseq[which.min(MSFE_avg)]
-
-  if(length(lambda_opt)==0){
-    lambda_opt <- lambdaPhiseq[round(median(1:length(lambdaPhiseq)))]
-  }else{
-    if(is.na(lambda_opt)){
+    if(length(lambda_opt)==0){
       lambda_opt <- lambdaPhiseq[round(median(1:length(lambdaPhiseq)))]
+    }else{
+      if(is.na(lambda_opt)){
+        lambda_opt <- lambdaPhiseq[round(median(1:length(lambdaPhiseq)))]
+      }
     }
-  }
 
-  # One-standard error rule to determine optimal lambda values
-  lambda_opt_oneSE <- NA
-  lambda_optinit <- lambda_opt
-  MSFE_sd <- apply(MSFEmatrix, 2, sd)/sqrt(nrow(MSFEmatrix))
-  MSFE_flagOK <- MSFE_avg < min(MSFE_avg, na.rm=T) + MSFE_sd[which.min(MSFE_avg)]
-  MSFEnew <- MSFE_avg
-  MSFEnew[!MSFE_flagOK] <- NA
-  sparsitynew <- apply(sparsitymatrix,2,mean)
-  sparsitynew[!MSFE_flagOK] <- NA
+    # One-standard error rule to determine optimal lambda values
+    lambda_opt_oneSE <- NA
+    lambda_optinit <- lambda_opt
+    MSFE_sd <- apply(MSFEmatrix, 2, sd)/sqrt(nrow(MSFEmatrix))
+    MSFE_flagOK <- MSFE_avg < min(MSFE_avg, na.rm=T) + MSFE_sd[which.min(MSFE_avg)]
+    MSFEnew <- MSFE_avg
+    MSFEnew[!MSFE_flagOK] <- NA
+    sparsitynew <- apply(sparsitymatrix,2,mean)
+    sparsitynew[!MSFE_flagOK] <- NA
 
-  lambda_opt_oneSE <- lambdaPhiseq[which.min(sparsitynew)]
+    lambda_opt_oneSE <- lambdaPhiseq[which.min(sparsitynew)]
 
-  if(length(lambda_opt_oneSE)==0){
-    lambda_opt_oneSE <- lambda_optinit
-  }else{
-    if(is.na(lambda_opt_oneSE)){
+    if(length(lambda_opt_oneSE)==0){
       lambda_opt_oneSE <- lambda_optinit
+    }else{
+      if(is.na(lambda_opt_oneSE)){
+        lambda_opt_oneSE <- lambda_optinit
+      }
     }
+
+    gridflag_oneSE <- lambda_opt_oneSE==min(lambdaPhiseq)
+    if(lambda_opt_oneSE==min(lambdaPhiseq)){
+      warning("Lower bound of lambda grid is selected: higher value of first granularity parameter is recommended as an input")
+    }
+    opt_lambdas[i] <- lambda_opt
+    opt_lambdas_oneSE[i] <- lambda_opt_oneSE
   }
-
-  gridflag_oneSE <- lambda_opt_oneSE==min(lambdaPhiseq)
-  if(lambda_opt_oneSE==min(lambdaPhiseq)){
-    warning("Lower bound of lambda grid is selected: higher value of first granularity parameter is recommended as an input")
-  }
-
-
   # Output
   out <- list("lambda" = lambdaPhiseq,
-              "lambda_opt_oneSE" = lambda_opt_oneSE,
+              "lambda_opt_oneSE" = opt_lambda_oneSE,
               "MSFE_all" = MSFEmatrix,
               "MSFE_avg" = MSFE_avg,
               "flag_oneSE" = gridflag_oneSE,
-              "lambda_opt" = lambda_opt)
+              "lambda_opt" = opt_lambda_opt)
 
 }
+

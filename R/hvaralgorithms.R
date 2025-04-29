@@ -65,6 +65,7 @@
 
   if (group == "HVARELEM" | group =="Basic"){
     estim <- ifelse(group == "Basic", 1, 2)
+    browser()
     gamstart <- LGSearch_cpp(gamstart, Y, Z, beta, estim, k, p)
   }
   else{
